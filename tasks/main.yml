@@ -1,0 +1,52 @@
+---
+- stat:
+    path: /var/www/html/public_html/wp-admin
+  register: wp
+- name: Download wp-core
+  become: yes
+  become_user: vagrant
+  shell: cd /var/www/html/public_html && wp core download
+  when: wp.stat.isdir is not defined
+
+- name: Create wordpress database user
+  mysql_user:
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    user: wordpress
+    password: wordpress
+    host: localhost
+    priv: 'wordpress.*:ALL'
+  register: wordpress_user
+
+- name: Create wordpress database
+  mysql_db:
+    login_user: wordpress
+    login_password: wordpress
+    name: wordpress
+  when: wordpress_user.changed
+
+- stat:
+    path: /var/www/html/wp-config.php
+  register: config
+
+- name: Install wordpress
+  become: yes
+  become_user: vagrant
+  shell: | 
+    cd /var/www/html/public_html
+    wp core config --dbname=wordpress --dbuser=wordpress --dbpass=wordpress
+    wp core install --title=dev --admin_user=admin --admin_password=wordpress --admin_email=devnull@devnull.com --skip-email --url=http://wordpress.local
+  when: config.stat.isfile is not defined
+
+- name: Copy nginx config
+  copy:
+    src: 'wordpress'
+    dest: '/etc/nginx/sites-available/wordpress'
+  notify: restart nginx
+
+- name: Enable site
+  file:
+    src: '/etc/nginx/sites-available/wordpress'
+    dest: '/etc/nginx/sites-enabled/wordpress'
+    state: link
+  notify: restart nginx
